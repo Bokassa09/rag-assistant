@@ -67,7 +67,7 @@ analyze_question → OUI → retrieve_and_answer → END
 | LangGraph | Gestion intelligente du flux |
 | HuggingFace | Modèle d'embeddings (all-MiniLM-L6-v2) |
 | ChromaDB | Base vectorielle |
-| Groq | LLM (Compound Mini) |
+|Groq | LLM (openai/gpt-oss-120b)|
 | Streamlit | Interface utilisateur |
 | Docker | Conteneurisation |
 | Render | Déploiement cloud |
@@ -120,13 +120,20 @@ docker run -p 8501:8501 -e GROQ_API_KEY=ta-clé rag-assistant
 
 ---
 
-## Évaluation RAGAs
+### Évaluation du système RAG
 
-Évaluation du système RAG avec 4 métriques :
-- **Faithfulness** : détection des hallucinations
-- **Answer Relevancy** : pertinence des réponses
-- **Context Precision** : qualité des chunks retournés
-- **Context Recall** : complétude des informations
+Une première évaluation a été réalisée à l’aide du script `evaluate_rag.py`, qui pose 3 questions à partir d’un PDF de test. Un LLM (`openai/gpt-oss-120b`) évalue ensuite chaque réponse sur deux métriques, avec un score compris entre 0 et 1.
+
+| Métrique         | Score moyen |
+| ---------------- | ----------: |
+| Faithfulness     |    **0,67** |
+| Answer Relevancy |    **0,95** |
+
+Ces premiers résultats montrent une **très bonne pertinence des réponses**, avec un score élevé en Answer Relevancy. En revanche, le score de Faithfulness indique qu’il reste une marge d’amélioration concernant l’alignement des réponses avec le contexte fourni.
+
+**Limites :** cette évaluation repose seulement sur 3 questions et ne mesure pas la qualité de la récupération des documents. Les métriques **Context Precision** et **Context Recall** ne sont notamment pas encore évaluées.
+
+**Prochaine étape :** mettre en place une évaluation plus complète avec **RAGAS**, comprenant davantage de questions et un protocole d’évaluation plus strict, afin de mesurer à la fois la qualité de la récupération du contexte et celle des réponses générées.
 
 ---
 
