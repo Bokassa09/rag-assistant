@@ -47,7 +47,7 @@ def create_rag_chain(vectorstore: Chroma):
     """Créer la chaîne RAG avec LangChain 1.3+"""
 
     llm = ChatGroq(
-    model="groq/compound-mini",
+    model="llama-3.3-70b-versatile",
     temperature=0.1,
     api_key=os.getenv("GROQ_API_KEY")
 )
