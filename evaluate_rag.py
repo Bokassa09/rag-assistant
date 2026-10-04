@@ -18,7 +18,7 @@ def parse_score(response_text: str) -> float:
     return 0.5
 
 llm = ChatGroq(
-    model="groq/compound-mini",
+    model="llama-3.3-70b-versatile",
     temperature=0,
     api_key=os.getenv("GROQ_API_KEY")
 )
