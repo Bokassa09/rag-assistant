@@ -1,4 +1,5 @@
 import os
+from functools import lru_cache
 from dotenv import load_dotenv
 import pymupdf as fitz
 from langchain_text_splitters import RecursiveCharacterTextSplitter
@@ -12,6 +13,16 @@ from langchain_core.messages import HumanMessage, AIMessage
 
 load_dotenv()
 
+
+@lru_cache(maxsize=1)
+def get_embeddings():
+    """Charge le modèle d'embeddings une seule fois (économie de mémoire)"""
+    return HuggingFaceEmbeddings(
+        model_name="sentence-transformers/all-MiniLM-L6-v2",
+        encode_kwargs={"batch_size": 16}
+    )
+
+
 def extract_text_from_pdf(pdf_path: str) -> str:
     """Extraire le texte d'un PDF avec PyMuPDF"""
     doc = fitz.open(pdf_path)
@@ -22,8 +33,9 @@ def extract_text_from_pdf(pdf_path: str) -> str:
     doc.close()
     return text
 
+
 def create_vectorstore(text: str) -> Chroma:
-    """Chunking + Embeddings + ChromaDB"""
+    """Chunking + Embeddings + ChromaDB (en mémoire, repart de zéro à chaque PDF)"""
     splitter = RecursiveCharacterTextSplitter(
         chunk_size=500,
         chunk_overlap=50,
@@ -32,25 +44,23 @@ def create_vectorstore(text: str) -> Chroma:
     chunks = splitter.split_text(text)
     print(f"Nombre de chunks créés : {len(chunks)}")
 
-    embeddings = HuggingFaceEmbeddings(
-        model_name="sentence-transformers/all-MiniLM-L6-v2"
-    )
+    embeddings = get_embeddings()
 
     vectorstore = Chroma.from_texts(
         texts=chunks,
-        embedding=embeddings,
-        persist_directory="./data/chroma_db"
+        embedding=embeddings
     )
     return vectorstore
+
 
 def create_rag_chain(vectorstore: Chroma):
     """Créer la chaîne RAG avec LangChain 1.3+"""
 
     llm = ChatGroq(
-    model="openai/gpt-oss-120b",
-    temperature=0.1,
-    api_key=os.getenv("GROQ_API_KEY")
-)
+        model="openai/gpt-oss-120b",
+        temperature=0.1,
+        api_key=os.getenv("GROQ_API_KEY")
+    )
 
     retriever = vectorstore.as_retriever(
         search_kwargs={"k": 3}
@@ -86,6 +96,7 @@ Contexte : {context}"""),
 
     return get_response
 
+
 def process_pdf(pdf_path: str):
     """Pipeline complet : PDF → RAG Chain"""
     print(f"Traitement du PDF : {pdf_path}")
@@ -94,21 +105,22 @@ def process_pdf(pdf_path: str):
     vectorstore = create_vectorstore(text)
     chain = create_rag_chain(vectorstore)
     print("Pipeline RAG prêt !")
-    return chain, [] 
+    return chain, []
+
 
 def create_graph(vectorstore: Chroma):
     """Créer le graphe LangGraph"""
     from graph_pipeline import build_graph
-    
+
     retriever = vectorstore.as_retriever(
         search_kwargs={"k": 3}
     )
-    
+
     # Aperçu du contenu pour analyze_question
     docs = retriever.invoke("de quoi parle ce document")
     context_preview = "\n".join(
         doc.page_content[:100] for doc in docs
     )
-    
+
     graph = build_graph(retriever, context_preview)
     return graph
