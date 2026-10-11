@@ -6,6 +6,9 @@ from rag_pipeline import create_vectorstore
 from graph_pipeline import build_graph
 from langchain_core.messages import HumanMessage, AIMessage
 
+MAX_CHARS = 300_000  # limite de sécurité pour la mémoire (offre gratuite 512 Mo)
+
+
 def extract_text_from_pdf_app(pdf_path: str) -> str:
     doc = fitz.open(pdf_path)
     text = ""
@@ -14,6 +17,18 @@ def extract_text_from_pdf_app(pdf_path: str) -> str:
         text += page.get_text()
     doc.close()
     return text
+
+
+def free_vectorstore():
+    """Libère la collection du document précédent"""
+    vs = st.session_state.get("vectorstore")
+    if vs is not None:
+        try:
+            vs.delete_collection()
+        except Exception:
+            pass
+    st.session_state.vectorstore = None
+
 
 st.set_page_config(
     page_title="RAG Assistant",
@@ -45,6 +60,8 @@ if "pdf_processed" not in st.session_state:
     st.session_state.pdf_processed = False
 if "messages" not in st.session_state:
     st.session_state.messages = []
+if "vectorstore" not in st.session_state:
+    st.session_state.vectorstore = None
 
 # Sidebar
 with st.sidebar:
@@ -66,26 +83,39 @@ with st.sidebar:
                     tmp_file.write(uploaded_file.read())
                     tmp_path = tmp_file.name
 
-                text = extract_text_from_pdf_app(tmp_path)
+                try:
+                    text = extract_text_from_pdf_app(tmp_path)
+                finally:
+                    os.unlink(tmp_path)
+
+                if len(text) > MAX_CHARS:
+                    text = text[:MAX_CHARS]
+                    st.warning(
+                        "Document volumineux : seuls les premiers "
+                        "300 000 caractères sont analysés."
+                    )
+
+                free_vectorstore()
                 vectorstore = create_vectorstore(text)
+                st.session_state.vectorstore = vectorstore
                 retriever = vectorstore.as_retriever(
                     search_kwargs={"k": 3}
                 )
                 docs = retriever.invoke("de quoi parle ce document")
                 context_preview = "\n".join(
-    doc.page_content[:300] for doc in docs
-)
+                    doc.page_content[:300] for doc in docs
+                )
                 graph = build_graph(retriever, context_preview)
                 st.session_state.rag_chain = graph
                 st.session_state.chat_history = []
                 st.session_state.pdf_processed = True
-                os.unlink(tmp_path)
 
             st.success("✅ PDF traité avec succès !")
 
     if st.session_state.pdf_processed:
         st.info("📄 Document chargé")
         if st.button("🗑️ Nouveau document"):
+            free_vectorstore()
             st.session_state.chat_history = []
             st.session_state.rag_chain = None
             st.session_state.pdf_processed = False
