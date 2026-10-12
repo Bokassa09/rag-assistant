@@ -1,26 +1,37 @@
 import os
+import uuid
 from functools import lru_cache
 from dotenv import load_dotenv
 import pymupdf as fitz
+from fastembed import TextEmbedding
 from langchain_text_splitters import RecursiveCharacterTextSplitter
 from langchain_chroma import Chroma
-from langchain_huggingface import HuggingFaceEmbeddings
+from langchain_core.embeddings import Embeddings
 from langchain_groq import ChatGroq
-from langchain_core.runnables import RunnablePassthrough
-from langchain_core.output_parsers import StrOutputParser
 from langchain_core.prompts import ChatPromptTemplate, MessagesPlaceholder
-from langchain_core.messages import HumanMessage, AIMessage
 
 load_dotenv()
+
+EMBEDDING_MODEL = "sentence-transformers/all-MiniLM-L6-v2"
+
+
+class FastEmbedEmbeddings(Embeddings):
+    """Embeddings ONNX légers (fastembed), sans PyTorch."""
+
+    def __init__(self, model_name: str = EMBEDDING_MODEL):
+        self.model = TextEmbedding(model_name=model_name)
+
+    def embed_documents(self, texts):
+        return [vec.tolist() for vec in self.model.embed(texts)]
+
+    def embed_query(self, text):
+        return next(iter(self.model.embed([text]))).tolist()
 
 
 @lru_cache(maxsize=1)
 def get_embeddings():
     """Charge le modèle d'embeddings une seule fois (économie de mémoire)"""
-    return HuggingFaceEmbeddings(
-        model_name="sentence-transformers/all-MiniLM-L6-v2",
-        encode_kwargs={"batch_size": 16}
-    )
+    return FastEmbedEmbeddings()
 
 
 def extract_text_from_pdf(pdf_path: str) -> str:
@@ -35,7 +46,7 @@ def extract_text_from_pdf(pdf_path: str) -> str:
 
 
 def create_vectorstore(text: str) -> Chroma:
-    """Chunking + Embeddings + ChromaDB (en mémoire, repart de zéro à chaque PDF)"""
+    """Chunking + Embeddings + ChromaDB (en mémoire, une collection par PDF)"""
     splitter = RecursiveCharacterTextSplitter(
         chunk_size=500,
         chunk_overlap=50,
@@ -44,11 +55,10 @@ def create_vectorstore(text: str) -> Chroma:
     chunks = splitter.split_text(text)
     print(f"Nombre de chunks créés : {len(chunks)}")
 
-    embeddings = get_embeddings()
-
     vectorstore = Chroma.from_texts(
         texts=chunks,
-        embedding=embeddings
+        embedding=get_embeddings(),
+        collection_name=f"doc_{uuid.uuid4().hex}"
     )
     return vectorstore
 
@@ -66,7 +76,6 @@ def create_rag_chain(vectorstore: Chroma):
         search_kwargs={"k": 3}
     )
 
-    # Prompt template
     prompt = ChatPromptTemplate.from_messages([
         ("system", """Tu es un assistant utile qui répond aux questions 
 en te basant UNIQUEMENT sur le contexte fourni.
@@ -116,7 +125,6 @@ def create_graph(vectorstore: Chroma):
         search_kwargs={"k": 3}
     )
 
-    # Aperçu du contenu pour analyze_question
     docs = retriever.invoke("de quoi parle ce document")
     context_preview = "\n".join(
         doc.page_content[:100] for doc in docs
