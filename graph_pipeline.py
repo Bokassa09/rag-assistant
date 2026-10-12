@@ -13,7 +13,6 @@ llm = ChatGroq(
     api_key=os.getenv("GROQ_API_KEY")
 )
 
-# 1. ÉTAT DU GRAPHE
 class RAGState(TypedDict):
     question: str
     chat_history: List
@@ -21,7 +20,6 @@ class RAGState(TypedDict):
     answer: str
     is_relevant: bool
 
-# 2. NOEUDS
 
 def analyze_question(state: RAGState) -> RAGState:
     """Noeud 1 : la question est-elle pertinente ?"""
@@ -100,7 +98,6 @@ def should_retrieve(state: RAGState) -> str:
     """Décision : quelle branche ?"""
     return "retrieve" if state["is_relevant"] else "off_topic"
 
-# 3. CONSTRUIRE LE GRAPHE
 def build_graph(retriever, context_preview: str = ""):
 
     def retrieve_node(state):
